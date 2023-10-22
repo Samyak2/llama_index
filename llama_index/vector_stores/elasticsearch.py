@@ -1,10 +1,21 @@
 """Elasticsearch vector store."""
 import asyncio
+import threading
 import uuid
 from logging import getLogger
-from typing import Any, Callable, Dict, List, Literal, Optional, Union, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+)
 
-import nest_asyncio
 import numpy as np
 
 from llama_index.schema import BaseNode, MetadataMode, TextNode
@@ -24,6 +35,32 @@ DISTANCE_STRATEGIES = Literal[
     "DOT_PRODUCT",
     "EUCLIDEAN_DISTANCE",
 ]
+
+T = TypeVar("T")
+
+
+def _start_background_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+_LOOP = asyncio.new_event_loop()
+_LOOP_THREAD = threading.Thread(
+    target=_start_background_loop, args=(_LOOP,), daemon=True
+)
+_LOOP_THREAD.start()
+
+
+def _asyncio_run(coro: Awaitable[T], timeout: Optional[float] = None) -> T:
+    """
+    Runs the coroutine in an event loop running on a background thread,
+    and blocks the current thread until it returns a result.
+    This plays well with gevent, since it can yield on the Future result call.
+
+    :param coro: A coroutine, typically an async method
+    :param timeout: How many seconds we should wait for a result before raising an error
+    """
+    return asyncio.run_coroutine_threadsafe(coro, _LOOP).result(timeout=timeout)
 
 
 def _get_elasticsearch_client(
@@ -172,7 +209,6 @@ class ElasticsearchStore(VectorStore):
         batch_size: int = 200,
         distance_strategy: Optional[DISTANCE_STRATEGIES] = "COSINE",
     ) -> None:
-        nest_asyncio.apply()
         self.index_name = index_name
         self.text_field = text_field
         self.vector_field = vector_field
@@ -287,7 +323,7 @@ class ElasticsearchStore(VectorStore):
             ImportError: If elasticsearch['async'] python package is not installed.
             BulkIndexError: If AsyncElasticsearch async_bulk indexing fails.
         """
-        return asyncio.get_event_loop().run_until_complete(
+        return _asyncio_run(
             self.async_add(nodes, create_index_if_not_exists=create_index_if_not_exists)
         )
 
@@ -385,9 +421,7 @@ class ElasticsearchStore(VectorStore):
         Raises:
             Exception: If Elasticsearch delete_by_query fails.
         """
-        return asyncio.get_event_loop().run_until_complete(
-            self.adelete(ref_doc_id, **delete_kwargs)
-        )
+        return _asyncio_run(self.adelete(ref_doc_id, **delete_kwargs))
 
     async def adelete(self, ref_doc_id: str, **delete_kwargs: Any) -> None:
         """Async delete node from Elasticsearch index.
@@ -444,9 +478,7 @@ class ElasticsearchStore(VectorStore):
             Exception: If Elasticsearch query fails.
 
         """
-        return asyncio.get_event_loop().run_until_complete(
-            self.aquery(query, custom_query, es_filter, **kwargs)
-        )
+        return _asyncio_run(self.aquery(query, custom_query, es_filter, **kwargs))
 
     async def aquery(
         self,
