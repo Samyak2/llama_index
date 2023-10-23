@@ -153,13 +153,15 @@ class BaseOpenAIAgent(BaseAgent):
         return True
 
     def init_chat(
-        self, message: str, chat_history: Optional[List[ChatMessage]] = None
+        self, message: Optional[str], chat_history: Optional[List[ChatMessage]] = None
     ) -> Tuple[List[BaseTool], List[dict]]:
         if chat_history is not None:
             self.memory.set(chat_history)
         self.sources = []
-        self.memory.put(ChatMessage(content=message, role=MessageRole.USER))
-        tools = self.get_tools(message)
+        if message:
+            self.memory.put(ChatMessage(content=message, role=MessageRole.USER))
+        last_message = self.memory.get()[-1].content or ""
+        tools = self.get_tools(last_message)
         functions = [tool.metadata.to_openai_function() for tool in tools]
         return tools, functions
 
@@ -273,7 +275,7 @@ class BaseOpenAIAgent(BaseAgent):
 
     def _chat(
         self,
-        message: str,
+        message: Optional[str],
         chat_history: Optional[List[ChatMessage]] = None,
         function_call: Union[str, dict] = "auto",
         mode: ChatResponseMode = ChatResponseMode.WAIT,
@@ -301,7 +303,7 @@ class BaseOpenAIAgent(BaseAgent):
 
     async def _achat(
         self,
-        message: str,
+        message: Optional[str],
         chat_history: Optional[List[ChatMessage]] = None,
         function_call: Union[str, dict] = "auto",
         mode: ChatResponseMode = ChatResponseMode.WAIT,
@@ -331,13 +333,13 @@ class BaseOpenAIAgent(BaseAgent):
     @trace_method("chat")
     def chat(
         self,
-        message: str,
+        message: Optional[str] = None,
         chat_history: Optional[List[ChatMessage]] = None,
         function_call: Union[str, dict] = "auto",
     ) -> AgentChatResponse:
         with self.callback_manager.event(
             CBEventType.AGENT_STEP,
-            payload={EventPayload.MESSAGES: [message]},
+            payload={EventPayload.MESSAGES: [message]} if message is not None else {},
         ) as e:
             chat_response = self._chat(
                 message, chat_history, function_call, mode=ChatResponseMode.WAIT
@@ -355,7 +357,7 @@ class BaseOpenAIAgent(BaseAgent):
     ) -> AgentChatResponse:
         with self.callback_manager.event(
             CBEventType.AGENT_STEP,
-            payload={EventPayload.MESSAGES: [message]},
+            payload={EventPayload.MESSAGES: [message]} if message is not None else {},
         ) as e:
             chat_response = await self._achat(
                 message, chat_history, function_call, mode=ChatResponseMode.WAIT
@@ -367,13 +369,13 @@ class BaseOpenAIAgent(BaseAgent):
     @trace_method("chat")
     def stream_chat(
         self,
-        message: str,
+        message: Optional[str],
         chat_history: Optional[List[ChatMessage]] = None,
         function_call: Union[str, dict] = "auto",
     ) -> StreamingAgentChatResponse:
         with self.callback_manager.event(
             CBEventType.AGENT_STEP,
-            payload={EventPayload.MESSAGES: [message]},
+            payload={EventPayload.MESSAGES: [message]} if message is not None else {},
         ) as e:
             chat_response = self._chat(
                 message, chat_history, function_call, mode=ChatResponseMode.STREAM
@@ -385,13 +387,13 @@ class BaseOpenAIAgent(BaseAgent):
     @trace_method("chat")
     async def astream_chat(
         self,
-        message: str,
+        message: Optional[str],
         chat_history: Optional[List[ChatMessage]] = None,
         function_call: Union[str, dict] = "auto",
     ) -> StreamingAgentChatResponse:
         with self.callback_manager.event(
             CBEventType.AGENT_STEP,
-            payload={EventPayload.MESSAGES: [message]},
+            payload={EventPayload.MESSAGES: [message]} if message is not None else {},
         ) as e:
             chat_response = await self._achat(
                 message, chat_history, function_call, mode=ChatResponseMode.STREAM
